@@ -34,13 +34,12 @@ jobs:
 
     - name: Generate Go Code
       run: |
-        mkdir -p generated-repo/payment
-        mkdir -p generated-repo/order
-        protoc --go_out=generated-repo/payment --go_opt=paths=source_relative \
-             --go-grpc_out=generated-repo/payment --go-grpc_opt=paths=source_relative \
+        protoc --go_out=generated-repo --go_opt=paths=source_relative \
+             --go-grpc_out=generated-repo --go-grpc_opt=paths=source_relative \
              --proto_path=. payment/payment.proto
-        protoc --go_out=generated-repo/order --go_opt=paths=source_relative \
-             --go-grpc_out=generated-repo/order --go-grpc_opt=paths=source_relative \
+             
+        protoc --go_out=generated-repo --go_opt=paths=source_relative \
+             --go-grpc_out=generated-repo --go-grpc_opt=paths=source_relative \
              --proto_path=. order/order.proto
 
     - name: Push to Generated Repo
