@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package payment;
+
+option go_package = "github.com/OkaSher/assignment-generated/payment";
+
+import "google/protobuf/timestamp.proto";
+
+service PaymentService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+}
+
+message PaymentRequest {
+  string order_id = 1;
+  int64 amount = 2;
+}
+
+message PaymentResponse {
+  string transaction_id = 1;
+  string status = 2;
+  string order_id = 3;
+  google.protobuf.Timestamp processed_at = 4;
+}
