@@ -21,3 +21,16 @@ message PaymentResponse {
   string order_id = 3;
   google.protobuf.Timestamp processed_at = 4;
 }
+
+message ListPaymentsRequest {
+  string status = 1;
+}
+
+message ListPaymentsResponse {
+  repeated PaymentResponse payments = 1;
+}
+
+service PaymentService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+}
