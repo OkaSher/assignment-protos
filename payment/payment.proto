@@ -6,10 +6,6 @@ option go_package = "github.com/OkaSher/assignment-generated/payment";
 
 import "google/protobuf/timestamp.proto";
 
-service PaymentService {
-  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
-}
-
 message PaymentRequest {
   string order_id = 1;
   int64 amount = 2;
