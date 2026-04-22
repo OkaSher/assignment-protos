@@ -44,7 +44,7 @@ jobs:
             --go_out=out --go_opt=paths=source_relative \
             --go-grpc_out=out --go-grpc_opt=paths=source_relative
 
-      - name: Push to ConvertedProtosRepo
+      - name: Push to assignment-generated 
         env:
           PAT_TOKEN: ${{ secrets.GH_PAT }}
         run: |
