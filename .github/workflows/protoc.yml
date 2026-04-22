@@ -1,56 +1,76 @@
-name: Generate and Push Protos
+name: Generate ProtoBuf
+
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main  # or master, depending on your default branch
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
-  generate-protos:
+  generate:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Checkout Protos
-      uses: actions/checkout@v3
+      - name: Checkout Protos Repo
+        uses: actions/checkout@v3
 
-    - name: Setup Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.23
 
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v2
-      with:
-        version: "24.4"
+      - name: Install Protobuf Compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
-    - name: Install Protoc Go Plugins
-      run: |
-        go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+      - name: Install Go Protobuf Tools
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.33.0
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.3.0
+          export PATH="$PATH:$(go env GOPATH)/bin"
 
-    - name: Checkout Generated Repo
-      uses: actions/checkout@v3
-      with:
-        repository: OkaSher/assignment-generated
-        token: ${{ secrets.GH_PAT }}
-        path: generated-repo
+      - name: Generate Go Code
+        run: |
+          # Create a temporary directory for generated files
+          mkdir -p out
+          
+          # Find all .proto files and compile them
+          # Using paths=source_relative ensures the folder structure matches your proto files
+          find . -name "*.proto" -print0 | xargs -0 -n1 protoc -I. \
+            --go_out=out --go_opt=paths=source_relative \
+            --go-grpc_out=out --go-grpc_opt=paths=source_relative
 
-    - name: Generate Go Code
-      run: |
-        protoc --go_out=generated-repo --go_opt=paths=source_relative \
-             --go-grpc_out=generated-repo --go-grpc_opt=paths=source_relative \
-             --proto_path=. payment/payment.proto
-             
-        protoc --go_out=generated-repo --go_opt=paths=source_relative \
-             --go-grpc_out=generated-repo --go-grpc_opt=paths=source_relative \
-             --proto_path=. order/order.proto
-
-    - name: Push to Generated Repo
-      run: |
-        cd generated-repo
-        if [ ! -f "go.mod" ]; then
-          go mod init github.com/OkaSher/assignment-generated
-        fi
-        go mod tidy
-        git config user.name "GitHub Action"
-        git config user.email "action@github.com"
-        git add .
-        git commit -m "Auto-generated proto code" || echo "No changes"
-        git push
+      - name: Push to ConvertedProtosRepo
+        env:
+          PAT_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          # 1. Clone the destination repository
+          git clone https://github.com/OkaSher/assignment-generated gen-repo
+          
+          # 2. Copy files from 'out' to 'gen-repo'
+          cp -r out/* gen-repo/
+          
+          # 3. Commit and Push with Tags (Targeting High-Performance Indicators) 
+          cd gen-repo
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          git add .
+          
+          if git diff --cached --quiet; then
+            echo "No changes detected."
+          else
+            git commit -m "Automated proto generation: $(date +'%Y-%m-%d %H:%M:%S')"
+            
+            # Create a unique tag for versioning (e.g., v0.0.1712845000)
+            NEW_TAG="v0.0.$(date +%s)"
+            git tag "$NEW_TAG"
+            
+            # Use the PAT for authentication
+            git remote set-url origin https://x-access-token:${{ secrets.GH_PAT }}@github.com/Casper-242464/ConvertedProtosRepo.git
+            git push origin main --follow-tags
+          fi
