@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -11,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/lib/pq"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 
 	cachepkg "github.com/OkaSher/Micro/protos/services/order-service/internal/cache"
