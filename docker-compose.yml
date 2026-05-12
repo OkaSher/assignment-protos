@@ -36,6 +36,7 @@ services:
       POSTGRES_DSN: host=db port=5432 user=postgres password=postgres dbname=payments sslmode=disable
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       PAYMENT_QUEUE: payment.completed
+      REDIS_DSN: redis:6379
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -51,6 +52,10 @@ services:
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       PAYMENT_QUEUE: payment.completed
+      REDIS_DSN: redis:6379
+      PROVIDER_MODE: SIMULATED
+      EMAIL_RETRY_COUNT: "3"
+      EMAIL_RETRY_BASE_MS: "2000"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -62,11 +67,25 @@ services:
     environment:
       HTTP_PORT: "8080"
       PAYMENT_GRPC_ADDR: payment-service:50051
+      REDIS_DSN: redis:6379
+      CACHE_TTL_SEC: "300"
+      RATE_LIMIT_PER_MIN: "10"
     depends_on:
       payment-service:
         condition: service_started
     ports:
       - "8080:8080"
+
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
 
 volumes:
   pgdata:

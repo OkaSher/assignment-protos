@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,93 +11,51 @@ import (
 	"syscall"
 	"time"
 
-	pb "github.com/OkaSher/Micro/protos/generated-repo/payment"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	_ "github.com/lib/pq"
+	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
+
+	cachepkg "github.com/OkaSher/Micro/protos/services/order-service/internal/cache"
+	"github.com/OkaSher/Micro/protos/services/order-service/internal/repo"
+	"github.com/OkaSher/Micro/protos/services/order-service/internal/usecase"
+	"github.com/OkaSher/Micro/protos/services/order-service/middleware"
+	handlers "github.com/OkaSher/Micro/protos/services/order-service/transport/http/handlers"
 )
 
-type payRequest struct {
-	OrderID       string `json:"order_id"`
-	Amount        int64  `json:"amount"`
-	CustomerEmail string `json:"customer_email"`
-}
-
-type payResponse struct {
-	TransactionID string `json:"transaction_id"`
-	Status        string `json:"status"`
-	OrderID       string `json:"order_id"`
-	ProcessedAt   string `json:"processed_at"`
-}
-
 func main() {
-	httpAddr := ":" + getenv("HTTP_PORT", "8080")
-	paymentAddr := getenv("PAYMENT_GRPC_ADDR", "payment-service:50051")
+	_ = godotenv.Load()
 
-	conn, err := grpc.NewClient(paymentAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	dbDSN := getenv("POSTGRES_DSN", "host=db port=5432 user=postgres password=postgres dbname=payments sslmode=disable")
+	cacheDSN := getenv("REDIS_DSN", "redis:6379")
+
+	db, err := sql.Open("postgres", dbDSN)
 	if err != nil {
-		log.Fatalf("payment gRPC dial failed: %v", err)
+		log.Fatalf("opening db: %v", err)
 	}
-	defer conn.Close()
+	defer db.Close()
 
-	client := pb.NewPaymentServiceClient(conn)
+	rdb := redis.NewClient(&redis.Options{Addr: cacheDSN})
+	defer rdb.Close()
+
+	repoSvc := repo.NewPostgresRepo(db)
+	ttlSec := getenvInt("CACHE_TTL_SEC", 300)
+	cacheSvc := cachepkg.NewRedisCache(rdb, time.Duration(ttlSec)*time.Second)
+	uc := usecase.NewOrderUsecase(repoSvc, cacheSvc)
+
+	h := handlers.New(uc)
+
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/orders/", h.OrderHandler)
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	rlPerMin := getenvInt("RATE_LIMIT_PER_MIN", 10)
+	handler := middleware.RateLimitMiddleware(rdb, rlPerMin)(mux)
 
-	mux.HandleFunc("/orders/pay", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		var req payRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-		if req.OrderID == "" || req.Amount <= 0 {
-			http.Error(w, "order_id and positive amount are required", http.StatusBadRequest)
-			return
-		}
-		if req.CustomerEmail == "" {
-			req.CustomerEmail = "user@example.com"
-		}
-
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("customer-email", req.CustomerEmail))
-
-		grpcResp, err := client.ProcessPayment(ctx, &pb.PaymentRequest{
-			OrderId: req.OrderID,
-			Amount:  req.Amount,
-		})
-		if err != nil {
-			http.Error(w, "payment failed: "+err.Error(), http.StatusBadGateway)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(payResponse{
-			TransactionID: grpcResp.GetTransactionId(),
-			Status:        grpcResp.GetStatus(),
-			OrderID:       grpcResp.GetOrderId(),
-			ProcessedAt:   grpcResp.GetProcessedAt().AsTime().Format(time.RFC3339),
-		})
-	})
-
-	httpServer := &http.Server{
-		Addr:              httpAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	srv := &http.Server{Addr: ":" + getenv("HTTP_PORT", "8080"), Handler: handler}
 
 	go func() {
-		log.Printf("order-service HTTP listening on %s", httpAddr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("order-service HTTP listening on %s", srv.Addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http serve failed: %v", err)
 		}
 	}()
@@ -105,15 +64,23 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
 	log.Println("order-service shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = httpServer.Shutdown(shutdownCtx)
+	_ = srv.Close()
 }
 
 func getenv(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func getenvInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		var i int
+		_, err := fmt.Sscanf(v, "%d", &i)
+		if err == nil {
+			return i
+		}
 	}
 	return fallback
 }
