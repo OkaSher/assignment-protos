@@ -18,7 +18,7 @@ import (
 	"github.com/OkaSher/Micro/protos/services/order-service/internal/repo"
 	"github.com/OkaSher/Micro/protos/services/order-service/internal/usecase"
 	"github.com/OkaSher/Micro/protos/services/order-service/middleware"
-	handlers "github.com/OkaSher/Micro/protos/services/order-service/transport/http/handlers"
+	handlers "github.com/OkaSher/Micro/protos/services/order-service/transport/http"
 )
 
 func main() {
