@@ -10,6 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/order-service ./services/order-ser
 FROM alpine:3.21
 WORKDIR /app
 RUN adduser -D appuser
+RUN apk add --no-cache curl
 COPY --from=build /out/order-service /usr/local/bin/order-service
 USER appuser
 EXPOSE 8080

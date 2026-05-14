@@ -36,3 +36,10 @@ func (p *PostgresRepo) UpdateStatus(ctx context.Context, id, status string) erro
 	_, err := p.db.ExecContext(ctx, `UPDATE orders SET status=$1, data=$2 WHERE id=$3`, status, string(b), id)
 	return err
 }
+
+func (p *PostgresRepo) CreateOrder(ctx context.Context, id, status string) error {
+	_, err := p.db.ExecContext(ctx,
+		`INSERT INTO orders (id, status, data) VALUES ($1, $2, $3)`,
+		id, status, "{}")
+	return err
+}

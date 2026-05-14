@@ -45,6 +45,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("/orders", h.OrderHandler)
 	mux.HandleFunc("/orders/", h.OrderHandler)
 
 	rlPerMin := getenvInt("RATE_LIMIT_PER_MIN", 10)

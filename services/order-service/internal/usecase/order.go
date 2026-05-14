@@ -16,6 +16,7 @@ type OrderCache interface {
 type OrderRepo interface {
 	GetOrder(ctx context.Context, id string) (*repo.Order, error)
 	UpdateStatus(ctx context.Context, id, status string) error
+	CreateOrder(ctx context.Context, id, status string) error
 }
 
 type OrderUsecase struct {
@@ -51,5 +52,17 @@ func (u *OrderUsecase) UpdateStatus(ctx context.Context, id, status string) erro
 	}
 	// invalidate cache
 	_ = u.cache.Delete(ctx, "order:"+id)
+	return nil
+}
+
+func (u *OrderUsecase) CreateOrder(ctx context.Context, id, status string) error {
+	// Insert to database
+	if err := u.repo.CreateOrder(ctx, id, status); err != nil {
+		return err
+	}
+	// Cache the new order
+	o := &repo.Order{ID: id, Status: status, Data: "{}"}
+	b, _ := json.Marshal(o)
+	_ = u.cache.Set(ctx, "order:"+id, string(b))
 	return nil
 }
